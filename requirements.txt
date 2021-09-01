@@ -1,0 +1,10 @@
+opencv-python
+easydict
+numpy
+tqdm
+pyyaml
+pandas
+psutil
+openpyxl
+pyinstaller
+PyQt5

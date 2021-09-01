@@ -1,0 +1,16 @@
+P_N: 200 # 测试正例数量
+N_N: 200 # 测试负例数量
+imgP_dir: E:\projects\imgDetect\data\dataset\imgP # 正例文件夹
+imgN_dir: E:\projects\imgDetect\data\dataset\imgN # 反例文件夹
+
+imgL_name: '*14L.jpeg' # 大小图命名规范
+imgS_name: '*11S.jpeg' 
+
+result_path: result/result.xlsx
+threshold: 0.5 # 置信度阈值
+K: 35 # 最小缩放尺寸,越小越慢,越大越准
+
+DETAIL_PATH: result/detail.txt
+DIFF_THRESH: 0.045 # 图片差异值阈值
+ENABLE_ADAPT: true # 启动自适应缩放率
+SUB_METHOD: 5 # 搜索方法
