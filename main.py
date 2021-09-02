@@ -15,7 +15,22 @@ from exceptions import RoiException, ImgException
 from utils import save2json, yaml2dict, json2dict, save2txt
 
 
-def main_search(imgL, imgS, roi, sub_method, mae_thresh, enable_adapt, K):
+def scaling_search(imgL, imgS, roi, sub_method, isGray, mae_thresh, enable_adapt, K, enable_scaling, scaling_rates):
+    res = main_search(imgL, imgS, roi, sub_method, isGray,
+                      mae_thresh, enable_adapt, K)
+    if not enable_scaling:
+        return res
+    for imgS_s in gen_scaled_img(imgS, scaling_rates):
+        res_ = main_search(imgL, imgS_s, roi, sub_method, isGray,
+                           mae_thresh, enable_adapt, K)
+        if res_['mae'] < res['mae']:
+            res = res_
+        if res['mae'] < mae_thresh:
+            break
+    return res
+
+
+def main_search(imgL, imgS, roi, sub_method, isGray, mae_thresh, enable_adapt, K):
     if imgL is None or imgS is None:
         raise ImgException('大图或者小图为None')
     if imgL.size < imgS.size:
@@ -43,8 +58,8 @@ def main_search(imgL, imgS, roi, sub_method, mae_thresh, enable_adapt, K):
 
     imgL_n = imgL[y1:y2, x1:x2]
     rate = adaptive_rate(imgS, enable_adapt, K)
-    imgL_n = trans_img(imgL_n, rate)
-    imgS_n = trans_img(imgS, rate)
+    imgL_n = trans_img(imgL_n, rate, isGray)
+    imgS_n = trans_img(imgS, rate, isGray)
 
     coeff = cv2.matchTemplate(imgL_n, imgS_n, sub_method)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(coeff)
@@ -78,8 +93,6 @@ def main_search(imgL, imgS, roi, sub_method, mae_thresh, enable_adapt, K):
     return res
 
 
-
-
 def adaptive_rate(imgS, b_rate, K=50):
     rate = 1
     if b_rate == True:
@@ -90,8 +103,9 @@ def adaptive_rate(imgS, b_rate, K=50):
     return rate
 
 
-def trans_img(img, rate):
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+def trans_img(img, rate, isGray):
+    if isGray:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     img = img.astype(np.float32)
     img /= 255
 
@@ -101,9 +115,11 @@ def trans_img(img, rate):
             img, (int(w // rate), int(h // rate)), cv2.INTER_LINEAR)
     return img
 
+
 def inv_trans(a, rate):
     a = int(a * rate)
     return a
+
 
 def compute_mae(img1, img2):
     return np.mean(np.abs(img1 - img2))
@@ -142,12 +158,23 @@ def box_dist(res_box, gt_box):
     return dist
 
 
+def gen_scaled_img(img, scaling_rates=None):
+    if scaling_rates is None:
+        yield img
+    ranges = list(reversed(np.arange(*scaling_rates)))
+    for rate in ranges:
+        h, w = img.shape[:2]
+        img_s = cv2.resize(img, (int(w * rate), int(h * rate)))
+        yield img_s
+
+
 def detect(test_type='P', img_N=100):
     import logging
     from utils import Timer
 
     config = yaml2dict('config/config.yaml')
 
+    isGray = config['IS_GRAY']
     sub_method = config['SUB_METHOD']
     enable_adapt = config['ENABLE_ADAPT']
     K = config['K']
@@ -157,14 +184,20 @@ def detect(test_type='P', img_N=100):
     imgL_name = config['imgL_name']
     imgS_name = config['imgS_name']
 
+    # 小图缩放相关
+    enable_scaling = config['enable_scaling']
+    if enable_scaling:
+        scaling_rates = config['scaling_rates']
+    else:
+        scaling_rates = None
+
     if test_type == 'P':
         img_dir = imgP_dir
     else:
         img_dir = imgN_dir
     if not img_dir.exists():
         raise FileNotFoundError(f'{img_dir} 文件夹不存在。')
-    
-    
+
     # 预处理，获取图片路径
     imgL_paths_tmp = list(img_dir.glob(imgL_name))
     imgS_paths_tmp = list(img_dir.glob(imgS_name))
@@ -197,20 +230,20 @@ def detect(test_type='P', img_N=100):
     all_result = []
 
     lp = enumerate(zip(imgL_paths, imgS_paths))
-    # lp = tqdm(lp, total=len(imgL_paths))
-    # lp.set_description(test_type)
+    lp = tqdm(lp, total=len(imgL_paths))
+    lp.set_description(test_type)
     for i, (imgL_path, imgS_path) in lp:
         res = {}
         res['type'] = test_type
         res['id'] = i
         res['imgL_path'] = imgL_path.absolute().__str__()
-        res['imgS_path'] = imgS_path.absolute().__str__() 
+        res['imgS_path'] = imgS_path.absolute().__str__()
         with timer:
             res_ = {}
             # 读图
             imgL = read_img(imgL_path.as_posix())
             imgS = read_img(imgS_path.as_posix())
-            
+
             # 图片异常问题
             if imgL is None or imgS is None:
                 img_path = imgL_path if imgL is None else imgS_path
@@ -218,13 +251,15 @@ def detect(test_type='P', img_N=100):
                 continue
             h_s, w_s = imgS.shape[:2]
             h_l, w_l = imgL.shape[:2]
-            if h_s > h_l or  w_s > w_l:
-                logging.warning(f'小图 {imgL_path.absolute()} 比大图 {imgS_path.absolute()} 大')
+            if h_s > h_l or w_s > w_l:
+                logging.warning(
+                    f'小图 {imgL_path.absolute()} 比大图 {imgS_path.absolute()} 大')
                 continue
 
-
-            res_ = main_search(
-                imgL, imgS, [0, 0, w_l, h_l], sub_method=sub_method, mae_thresh=mae_thresh, enable_adapt=enable_adapt, K=K)
+            res_ = scaling_search(
+                imgL, imgS, [0, 0, w_l, h_l], sub_method=sub_method, isGray=isGray,
+                mae_thresh=mae_thresh, enable_adapt=enable_adapt, K=K,
+                enable_scaling=enable_scaling, scaling_rates=scaling_rates)
 
             # res['dist'] = int(box_dist(res['box'], boxes[i]))
 
@@ -233,7 +268,6 @@ def detect(test_type='P', img_N=100):
         res['time'] = float(f'{timer.this_time() * 1000:.0f}')
         all_result.append(res)
         logging.debug(res)
-
 
     logging.debug(f'run time {timer.total_time():.2f}s')
 
@@ -267,6 +301,7 @@ def get_cpu_speed():
 def get_memory():
     return float(f'{psutil.virtual_memory().total / 1024 / 1024 / 1024:.2f}')
 
+
 def main():
     config = yaml2dict('config/config.yaml')
     thresh = config['threshold']
@@ -292,20 +327,25 @@ def main():
     average_time = float(f'{average_time:.0f}')
 
     # 保存结果
-    columns = ["cpu主频(GHz)", "内存(GB)", "实际正样本数", "实际负样本数","测试正样本数", "测试负样本数",
-                "精确度%", "召回率%", "平均时间(ms)"]
+    columns = ["cpu主频(GHz)", "内存(GB)", "实际正样本数", "实际负样本数", "测试正样本数", "测试负样本数",
+               "精确度%", "召回率%", "平均时间(ms)"]
     data = [get_cpu_speed(), get_memory(), P_N, N_N, len(P_res), len(
         N_res), precision * 100, recall * 100, average_time]
     data = np.array([data])
     df = pd.DataFrame(data=data, columns=columns)
     df.to_excel(result_path)
-    logging.debug(df)
+    print(df)
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
+
+def exe():
+    # logging.basicConfig(level=logging.DEBUG)
     try:
         main()
     except Exception as e:
         print(e)
     finally:
         os.system('pause')
+
+
+if __name__ == '__main__':
+    main()

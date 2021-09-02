@@ -1,16 +1,20 @@
-P_N: 200 # 测试正例数量
-N_N: 200 # 测试负例数量
-imgP_dir: E:\projects\imgDetect\data\dataset\imgP # 正例文件夹
-imgN_dir: E:\projects\imgDetect\data\dataset\imgN # 反例文件夹
+P_N: 100 # 测试正例数量
+N_N: 100 # 测试负例数量
 
-imgL_name: '*14L.jpeg' # 大小图命名规范
-imgS_name: '*11S.jpeg' 
+imgP_dir: E:\dataset\dataset\imgP # 正例文件夹
+imgN_dir: E:\dataset\dataset\imgN # 反例文件夹
+imgL_name: "*14L.jpeg" # 大小图命名规范
+imgS_name: "*11S.jpeg"
+
+enable_scaling: false
+scaling_rates: [0.4, 1, 0.1] # 缩放比例[最小值, 最大值, 步长], 算法使用小图=原始小图×比例
 
 result_path: result/result.xlsx
-threshold: 0.5 # 置信度阈值
-K: 35 # 最小缩放尺寸,越小越慢,越大越准
-
 DETAIL_PATH: result/detail.txt
-DIFF_THRESH: 0.045 # 图片差异值阈值
+threshold: 0.5 # 置信度阈值
+K: 35 # 最小缩放尺寸,越小越快,越大越准
+
+IS_GRAY: false
+DIFF_THRESH: 0.07 # 图片差异值阈值
 ENABLE_ADAPT: true # 启动自适应缩放率
-SUB_METHOD: 5 # 搜索方法
+SUB_METHOD: 3 # 搜索方法
